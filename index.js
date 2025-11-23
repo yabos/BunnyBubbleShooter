@@ -3,7 +3,7 @@ const admin = require("firebase-admin");
 const cors = require("cors");
 
 // Firebase Admin key 불러오기
-const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 // Firestore 초기화
 admin.initializeApp({

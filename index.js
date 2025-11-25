@@ -2,10 +2,8 @@ const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
 
-// Firebase Admin key 불러오기
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const serviceAccount = require("./serviceAccountKey.json");
 
-// Firestore 초기화
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
@@ -16,24 +14,74 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 서버 테스트용
+// ----------
+// 라이프 계산 함수
+// ----------
+function calculateLife(user) {
+    const {
+        life = 5,
+        maxLives = 5,
+        refillInterval = 900,
+        lastLifeUpdate
+    } = user;
+
+    if (life >= maxLives) {
+        return { life, nextRefillIn: 0 };
+    }
+
+    if (!lastLifeUpdate) {
+        return { life, nextRefillIn: refillInterval };
+    }
+
+    const last = lastLifeUpdate.toDate();
+    const now = new Date();
+
+    const diffSec = Math.floor((now - last) / 1000);
+
+    if (diffSec <= 0) {
+        return { life, nextRefillIn: refillInterval };
+    }
+
+    const refillCount = Math.floor(diffSec / refillInterval);
+    const newLife = Math.min(maxLives, life + refillCount);
+
+    let nextRefillIn = refillInterval - (diffSec % refillInterval);
+
+    if (newLife >= maxLives) {
+        nextRefillIn = 0;
+    }
+
+    return { life: newLife, nextRefillIn };
+}
+
+// 서버 상태 테스트
 app.get("/", (req, res) => {
-    res.send("Node.js + Firebase Firestore Server Running!");
+    res.send("Node.js Firestore Server Running with Life System!");
 });
 
-// 저장 API
+// ----------
+// SAVE API
+// ----------
 app.post("/save", async (req, res) => {
-    const { sku, json } = req.body;
+    const { sku, json, life, maxLives, refillInterval } = req.body;
 
-    if (!sku || !json) {
-        return res.status(400).json({ error: "missing sku or json" });
+    if (!sku || json === undefined || life === undefined) {
+        return res.status(400).json({ error: "Missing sku, json or life" });
     }
+
+    // ?? 0이 왔을 때 디폴트값 적용
+    if (!maxLives || maxLives <= 0) maxLives = 5;
+    if (!refillInterval || refillInterval <= 0) refillInterval = 900;
 
     try {
         await firestore.collection("users").doc(sku).set({
             data: json,
+            life: life,
+            maxLives: maxLives,
+            refillInterval: refillInterval,
+            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
 
         res.json({ success: true });
     } catch (err) {
@@ -41,10 +89,10 @@ app.post("/save", async (req, res) => {
     }
 });
 
-// 불러오기 API
+// ----------
+// LOAD API
+// ----------
 app.post("/load", async (req, res) => {
-    console.log(">>> /load called:", req.body);
-
     const { sku } = req.body;
 
     if (!sku) {
@@ -53,35 +101,36 @@ app.post("/load", async (req, res) => {
 
     try {
         const docRef = firestore.collection("users").doc(sku);
-        const docSnap = await docRef.get();
+        const snap = await docRef.get();
 
-        if (!docSnap.exists) {
-            // 신규 계정
-            return res.json({
-                exists: false
-            });
+        if (!snap.exists) {
+            return res.json({ exists: false });
         }
 
-        const data = docSnap.data();
+        const data = snap.data();
 
-        if (!data || !data.data) {
-            // 데이터 구조가 없거나 비정상일 경우
-            return res.json({
-                exists: false
-            });
-        }
+        // ---- life 계산 ----
+        const lifeResult = calculateLife(data);
+
+        // 계산된 결과를 업데이트
+        await docRef.update({
+            life: lifeResult.life,
+            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp()
+        });
 
         return res.json({
             exists: true,
-            data: data.data
+            data: data.data,
+            life: lifeResult.life,
+            nextRefillIn: lifeResult.nextRefillIn,
+            maxLives: data.maxLives,
+            refillInterval: data.refillInterval
         });
 
     } catch (err) {
-        console.error("LOAD ERROR:", err);
         return res.status(500).json({ error: err.message });
     }
 });
-
 
 app.listen(3000, () => {
     console.log("Server running on port 3000");

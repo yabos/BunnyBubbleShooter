@@ -63,31 +63,36 @@ app.get("/", (req, res) => {
 // SAVE API
 // ----------
 app.post("/save", async (req, res) => {
-    const { sku, json, life, maxLives, refillInterval } = req.body;
+    let { sku, json, life, maxLives, refillInterval } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
     }
 
-    // ?? 0이 왔을 때 디폴트값 적용
+    life = Number(life);
+    maxLives = Number(maxLives);
+    refillInterval = Number(refillInterval);
+
     if (!maxLives || maxLives <= 0) maxLives = 5;
     if (!refillInterval || refillInterval <= 0) refillInterval = 900;
 
     try {
         await firestore.collection("users").doc(sku).set({
             data: json,
-            life: life,
-            maxLives: maxLives,
-            refillInterval: refillInterval,
+            life,
+            maxLives,
+            refillInterval,
             lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
         res.json({ success: true });
     } catch (err) {
+        console.error("SAVE ERROR:", err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // ----------
 // LOAD API

@@ -169,6 +169,24 @@ app.post("/load", async (req, res) => {
     }
 });
 
+function createDefaultSaveData(sku) {
+    return JSON.stringify({
+        UserID: sku,
+        Resources: {
+            keys: ["Coins", "Life"],
+            values: [10, 5]   // 시작 코인=10, 라이프=5
+        },
+        LastDisabledTime: "",
+        MaxLife: 5,
+        RefillInterval: 900,
+        NextRefillRemainTime: 0,
+        Level: 1,
+        OpenLevel: 1,
+        RewardStreak: -1,
+        FreeSpin: 0
+    });
+}
+
 
 app.listen(3000, () => {
     console.log("Server running on port 3000");

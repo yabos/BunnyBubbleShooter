@@ -140,7 +140,7 @@ app.post("/load", async (req, res) => {
 
         // 신규 유저 생성
         if (!snap.exists) {
-            const defaultJson = "{}";
+            const defaultJson = createDefaultSaveData(sku);
             const life = 5;
             const maxLives = 5;
             const refillInterval = 900;
@@ -161,37 +161,34 @@ app.post("/load", async (req, res) => {
                 maxLives,
                 refillInterval,
                 nextRefillIn: 0,
-                isNewUser: true
             });
         }
 
-        const data = snap.data();
-
-        // life 계산
-        const lifeResult = calculateLife(data);
-
-        // life 업데이트
-        await docRef.update({
-            life: lifeResult.life,
-            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return res.json({
-            exists: true,
-            data: data.data,
-            life: lifeResult.life,
-            maxLives: data.maxLives,
-            refillInterval: data.refillInterval,
-            nextRefillIn: lifeResult.nextRefillIn,
-            isNewUser: false
-        });
 
     } catch (err) {
         console.error("LOAD ERROR:", err);
         return res.status(500).json({ error: err.message });
     }
 });
+
+function createDefaultSaveData(sku) {
+    return JSON.stringify({
+        UserID: sku,
+        Resources: {
+            keys: ["Coins", "Life"],
+            values: [10, 5]   // 시작 코인=10, 라이프=5
+        },
+        LastDisabledTime: "",
+        MaxLife: 5,
+        RefillInterval: 900,
+        NextRefillRemainTime: 0,
+        Level: 1,
+        OpenLevel: 1,
+        RewardStreak: -1,
+        FreeSpin: 0
+    });
+}
+
 
 // -----------------------------
 // Render 지원 포트

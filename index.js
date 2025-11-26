@@ -2,23 +2,21 @@ const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
 
-// Firebase Key: Render 환경 변수
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-// Firebase Admin 초기화
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
 const firestore = admin.firestore();
-const app = express();
 
+const app = express();
 app.use(express.json());
 app.use(cors());
 
-// -----------------------------
-// LIFE 계산 함수
-// -----------------------------
+// ----------
+// 라이프 계산 함수
+// ----------
 function calculateLife(user) {
     const {
         life = 5,
@@ -27,176 +25,117 @@ function calculateLife(user) {
         lastLifeUpdate
     } = user;
 
+    if (life >= maxLives) {
+        return { life, nextRefillIn: 0 };
+    }
+
+    if (!lastLifeUpdate) {
+        return { life, nextRefillIn: refillInterval };
+    }
+
+    const last = lastLifeUpdate.toDate();
     const now = new Date();
 
-    // 1) lastLifeUpdate가 없으면 (신규 유저)
-    if (!lastLifeUpdate) {
-        // 리필은 그러면 life < maxLives 일 때만 시작
-        return {
-            life,
-            nextRefillIn: life < maxLives ? refillInterval : 0
-        };
-    }
-
-    // 2) life >= maxLives → 리필 멈춤
-    if (life >= maxLives) {
-        return {
-            life,
-            nextRefillIn: 0   // 리필이 필요 없음
-        };
-    }
-
-    // 3) life < maxLives → 리필 작동
-    const last = lastLifeUpdate.toDate();
     const diffSec = Math.floor((now - last) / 1000);
 
     if (diffSec <= 0) {
         return { life, nextRefillIn: refillInterval };
     }
 
-    // 증가 가능한 라이프는 max까지, 구매/보상 증가만 overflow됨
     const refillCount = Math.floor(diffSec / refillInterval);
     const newLife = Math.min(maxLives, life + refillCount);
 
-    // 다음 리필까지 남은 시간
-    const nextRefillIn =
-        newLife >= maxLives
-            ? 0
-            : refillInterval - (diffSec % refillInterval);
+    let nextRefillIn = refillInterval - (diffSec % refillInterval);
 
-    return {
-        life: newLife,
-        nextRefillIn
-    };
+    if (newLife >= maxLives) {
+        nextRefillIn = 0;
+    }
+
+    return { life: newLife, nextRefillIn };
 }
 
-// -----------------------------
-// GET test
-// -----------------------------
+// 서버 상태 테스트
 app.get("/", (req, res) => {
-    res.send("Node.js Firestore Server Running!");
+    res.send("Node.js Firestore Server Running with Life System!");
 });
 
-// -----------------------------
-// SAVE (JSON만 저장)
-// -----------------------------
+// ----------
+// SAVE API
+// ----------
 app.post("/save", async (req, res) => {
-    const { sku, json } = req.body;
+    let { sku, json, life, maxLives, refillInterval } = req.body;
 
-    if (!sku || json === undefined) {
-        return res.status(400).json({ error: "Missing sku or json" });
+    if (!sku || json === undefined || life === undefined) {
+        return res.status(400).json({ error: "Missing sku, json or life" });
     }
+
+    life = Number(life);
+    maxLives = Number(maxLives);
+    refillInterval = Number(refillInterval);
+
+    if (!maxLives || maxLives <= 0) maxLives = 5;
+    if (!refillInterval || refillInterval <= 0) refillInterval = 900;
 
     try {
         await firestore.collection("users").doc(sku).set({
             data: json,
+            life,
+            maxLives,
+            refillInterval,
+            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
-        return res.json({ success: true });
+        res.json({ success: true });
     } catch (err) {
         console.error("SAVE ERROR:", err);
-        return res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
-// -----------------------------
-// SAVE LIFE (라이프만 저장)
-// -----------------------------
-app.post("/saveLife", async (req, res) => {
-    const { sku, life } = req.body;
 
-    if (!sku || life === undefined) {
-        return res.status(400).json({ error: "Missing sku or life" });
-    }
-
-    try {
-        await firestore.collection("users").doc(sku).update({
-            life: life,
-            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return res.json({ success: true, life });
-    } catch (err) {
-        console.error("SAVE LIFE ERROR:", err);
-        return res.status(500).json({ error: err.message });
-    }
-});
-
-// -----------------------------
-// LOAD (신규 생성 + life 계산 + JSON 반환)
-// -----------------------------
+// ----------
+// LOAD API
+// ----------
 app.post("/load", async (req, res) => {
     const { sku } = req.body;
 
     if (!sku) {
-        return res.status(400).json({ error: "Missing sku" });
+        return res.status(400).json({ error: "No SKU provided" });
     }
 
     try {
         const docRef = firestore.collection("users").doc(sku);
         const snap = await docRef.get();
 
-        // 신규 유저 생성
         if (!snap.exists) {
-            const defaultJson = "{}";
-            const life = 5;
-            const maxLives = 5;
-            const refillInterval = 900;
-
-            await docRef.set({
-                data: defaultJson,
-                life,
-                maxLives,
-                refillInterval,
-                lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-
-            return res.json({
-                exists: true,
-                data: defaultJson,
-                life,
-                maxLives,
-                refillInterval,
-                nextRefillIn: 0,
-                isNewUser: true
-            });
+            return res.json({ exists: false });
         }
 
         const data = snap.data();
 
-        // life 계산
+        // ---- life 계산 ----
         const lifeResult = calculateLife(data);
 
-        // life 업데이트
+        // 계산된 결과를 업데이트
         await docRef.update({
-            life: lifeResult.life,
-            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            life: lifeResult.life            
         });
 
         return res.json({
             exists: true,
             data: data.data,
             life: lifeResult.life,
-            maxLives: data.maxLives,
-            refillInterval: data.refillInterval,
             nextRefillIn: lifeResult.nextRefillIn,
-            isNewUser: false
+            maxLives: data.maxLives,
+            refillInterval: data.refillInterval
         });
 
     } catch (err) {
-        console.error("LOAD ERROR:", err);
         return res.status(500).json({ error: err.message });
     }
 });
 
-// -----------------------------
-// Render 지원 포트
-// -----------------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
+app.listen(3000, () => {
+    console.log("Server running on port 3000");
 });

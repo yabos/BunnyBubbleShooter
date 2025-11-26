@@ -108,22 +108,54 @@ app.post("/load", async (req, res) => {
         const docRef = firestore.collection("users").doc(sku);
         const snap = await docRef.get();
 
+        // -------------------------
+        // ?? 신규 유저 로직
+        // -------------------------
         if (!snap.exists) {
-            return res.json({ exists: false });
+
+            const defaultJson = createDefaultSaveData(sku);
+            const life = 5;
+            const maxLives = 5;
+            const refillInterval = 900;
+
+            await docRef.set({
+                data: defaultJson,
+                life,
+                maxLives,
+                refillInterval,
+                lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            return res.json({
+                exists: true,
+                isNewUser: true,
+                data: defaultJson,
+                life,
+                maxLives,
+                refillInterval,
+                nextRefillIn: 0
+            });
         }
 
+        // -------------------------
+        // ?? 기존 유저 로직
+        // -------------------------
         const data = snap.data();
 
-        // ---- life 계산 ----
+        // life 자동 계산
         const lifeResult = calculateLife(data);
 
-        // 계산된 결과를 업데이트
+        // 계산된 결과 업데이트
         await docRef.update({
-            life: lifeResult.life            
+            life: lifeResult.life,
+            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
         return res.json({
             exists: true,
+            isNewUser: false,
             data: data.data,
             life: lifeResult.life,
             nextRefillIn: lifeResult.nextRefillIn,
@@ -132,9 +164,11 @@ app.post("/load", async (req, res) => {
         });
 
     } catch (err) {
+        console.error("LOAD ERROR:", err);
         return res.status(500).json({ error: err.message });
     }
 });
+
 
 app.listen(3000, () => {
     console.log("Server running on port 3000");

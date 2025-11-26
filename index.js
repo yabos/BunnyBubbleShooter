@@ -148,9 +148,7 @@ app.post("/load", async (req, res) => {
 
         // 계산된 결과 업데이트
         await docRef.update({
-            life: lifeResult.life,
-            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            life: lifeResult.life            
         });
 
         return res.json({

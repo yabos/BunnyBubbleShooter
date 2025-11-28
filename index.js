@@ -16,7 +16,7 @@ app.use(cors());
 
 
 // ------------------------------------------------------------
-// LIFE 계산 함수 (쿨타임 유지 + 자연충전 시만 life 증가)
+// LIFE 계산 함수 (자연충전 + maxLife 도달 처리 포함)
 // ------------------------------------------------------------
 function calculateLife(user) {
     const {
@@ -31,7 +31,6 @@ function calculateLife(user) {
         return { life, nextRefillIn: 0, refillCount: 0 };
     }
 
-    // lastLifeUpdate 없으면 풀 쿨타임
     if (!lastLifeUpdate) {
         return { life, nextRefillIn: refillInterval, refillCount: 0 };
     }
@@ -39,26 +38,22 @@ function calculateLife(user) {
     const last = lastLifeUpdate.toDate();
     const now = new Date();
     let diffSec = Math.floor((now - last) / 1000);
-
     if (diffSec < 0) diffSec = 0;
 
-    // 자연 충전된 개수
+    // 자연 충전 개수
     const refillCount = Math.floor(diffSec / refillInterval);
     const newLife = Math.min(maxLives, life + refillCount);
 
     // 다음 충전까지 남은 시간
     let nextRefillIn = refillInterval - (diffSec % refillInterval);
-
-    if (newLife >= maxLives) {
-        nextRefillIn = 0;
-    }
+    if (newLife >= maxLives) nextRefillIn = 0;
 
     return { life: newLife, nextRefillIn, refillCount };
 }
 
 
 // ------------------------------------------------------------
-// SAVE API (절대 lastLifeUpdate 갱신하지 않음)
+// SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
     let { sku, json, life, maxLives, refillInterval } = req.body;
@@ -77,7 +72,7 @@ app.post("/save", async (req, res) => {
     try {
         const docRef = firestore.collection("users").doc(sku);
 
-        // Save에서는 life, json만 저장 (타이머 유지)
+        // SAVE는 life, json만 저장 → 타이머 절대 영향 없음
         await docRef.set({
             data: json,
             life,
@@ -96,7 +91,7 @@ app.post("/save", async (req, res) => {
 
 
 // ------------------------------------------------------------
-// LOAD API (자연 충전 발생 시에만 lastLifeUpdate 갱신)
+// LOAD API – 자연충전 / maxLife 도달 시 타이머 초기화
 // ------------------------------------------------------------
 app.post("/load", async (req, res) => {
     const { sku } = req.body;
@@ -109,7 +104,7 @@ app.post("/load", async (req, res) => {
         const docRef = firestore.collection("users").doc(sku);
         const snap = await docRef.get();
 
-        // 신규 유저 생성 -----------------------------------------------------
+        // 신규 유저 생성 ----------------------------------------
         if (!snap.exists) {
 
             const defaultJson = createDefaultSaveData(sku);
@@ -135,24 +130,27 @@ app.post("/load", async (req, res) => {
             });
         }
 
-        // 기존 유저 로직 -----------------------------------------------------
+        // 기존 유저 ----------------------------------------------
         const data = snap.data();
         const lifeResult = calculateLife(data);
 
-        // refillCount > 0 → 자연충전 발생!
+        let updatePayload = {
+            life: lifeResult.life
+        };
+
+        // ⭐ 자연 충전 (refillCount > 0) → 타이머 초기화
         if (lifeResult.refillCount > 0) {
-            await docRef.update({
-                life: lifeResult.life,
-                lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            updatePayload.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
+            updatePayload.updatedAt = admin.firestore.FieldValue.serverTimestamp();
         }
-        else {
-            // 자연충전 없었으면 life만 업데이트
-            await docRef.update({
-                life: lifeResult.life
-            });
+        // ⭐ maxLife 도달 → 타이머 초기화 (중요)
+        else if (lifeResult.life === data.maxLives) {
+            updatePayload.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
+            updatePayload.updatedAt = admin.firestore.FieldValue.serverTimestamp();
         }
+
+        // 업데이트 적용
+        await docRef.update(updatePayload);
 
         return res.json({
             exists: true,
@@ -171,8 +169,6 @@ app.post("/load", async (req, res) => {
 });
 
 
-// ------------------------------------------------------------
-// 신규 유저 기본 JSON
 // ------------------------------------------------------------
 function createDefaultSaveData(sku) {
     return JSON.stringify({

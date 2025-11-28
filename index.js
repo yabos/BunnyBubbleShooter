@@ -25,10 +25,12 @@ function calculateLife(user) {
         lastLifeUpdate
     } = user;
 
+    // 최대 라이프면 남은 시간 없음
     if (life >= maxLives) {
         return { life, nextRefillIn: 0 };
     }
 
+    // lastLifeUpdate 없음 → 풀 쿨타임
     if (!lastLifeUpdate) {
         return { life, nextRefillIn: refillInterval };
     }
@@ -36,28 +38,34 @@ function calculateLife(user) {
     const last = lastLifeUpdate.toDate();
     const now = new Date();
 
+    // 지난 시간
     let diffSec = Math.floor((now - last) / 1000);
     if (diffSec < 0) diffSec = 0;
 
-    // ? 여기: life 감소 직후 diffSec이 매우 작으면, remaining time 유지
-    const remaining = refillInterval - diffSec;
+    // ? remaining = 지금 refill까지 남은 시간
+    let remaining = refillInterval - diffSec;
+    if (remaining < 0) remaining = 0;
 
+    // ? 핵심 1 ? diffSec이 매우 작을 때 (0~1초), remaining 유지
+    // life가 감소했어도 remaining 유지되므로 쿨타임 리셋되면 안 됨
     if (diffSec === 0) {
         return { life, nextRefillIn: remaining };
     }
 
+    // ? 경과 시간동안 채워진 하트 계산
     const refillCount = Math.floor(diffSec / refillInterval);
     const newLife = Math.min(maxLives, life + refillCount);
 
+    // ? 다음 refill까지 남은 시간
     let nextRefillIn = refillInterval - (diffSec % refillInterval);
 
+    // ? 하트가 꽉 찬 경우
     if (newLife >= maxLives) {
         nextRefillIn = 0;
     }
 
     return { life: newLife, nextRefillIn };
 }
-
 
 // 서버 상태 테스트
 app.get("/", (req, res) => {

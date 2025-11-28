@@ -77,21 +77,40 @@ app.post("/save", async (req, res) => {
     if (!refillInterval || refillInterval <= 0) refillInterval = 900;
 
     try {
-        await firestore.collection("users").doc(sku).set({
+        const docRef = firestore.collection("users").doc(sku);
+        const snap = await docRef.get();
+
+        let updateData = {
             data: json,
             life,
             maxLives,
             refillInterval,
-            lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
+
+        if (snap.exists) {
+            const userData = snap.data();
+
+            // ----- 노 변경 플래그 핵심 -----
+            // life가 증가한 경우만 lastLifeUpdate 갱신
+            if (life > Number(userData.life)) {
+                updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
+            }
+        } else {
+            // 신규 데이터는 lastLifeUpdate 넣어도 OK
+            updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
+        }
+
+        await docRef.set(updateData, { merge: true });
 
         res.json({ success: true });
+
     } catch (err) {
         console.error("SAVE ERROR:", err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 
 // ----------

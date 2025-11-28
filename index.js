@@ -1,4 +1,4 @@
-const express = require("express");
+ï»¿const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
 
@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(cors());
 
 // ----------
-// ¶óÀÌÇÁ °è»ê ÇÔ¼ö
+// ë¼ì´í”„ ê³„ì‚° í•¨ìˆ˜
 // ----------
 function calculateLife(user) {
     const {
@@ -25,12 +25,12 @@ function calculateLife(user) {
         lastLifeUpdate
     } = user;
 
-    // ÃÖ´ë ¶óÀÌÇÁ¸é ³²Àº ½Ã°£ ¾øÀ½
+    // ìµœëŒ€ ë¼ì´í”„ë©´ ë‚¨ì€ ì‹œê°„ ì—†ìŒ
     if (life >= maxLives) {
         return { life, nextRefillIn: 0 };
     }
 
-    // lastLifeUpdate ¾øÀ½ ¡æ Ç® ÄğÅ¸ÀÓ
+    // lastLifeUpdate ì—†ìŒ â†’ í’€ ì¿¨íƒ€ì„
     if (!lastLifeUpdate) {
         return { life, nextRefillIn: refillInterval };
     }
@@ -38,28 +38,28 @@ function calculateLife(user) {
     const last = lastLifeUpdate.toDate();
     const now = new Date();
 
-    // Áö³­ ½Ã°£
+    // ì§€ë‚œ ì‹œê°„
     let diffSec = Math.floor((now - last) / 1000);
     if (diffSec < 0) diffSec = 0;
 
-    // ? remaining = Áö±İ refill±îÁö ³²Àº ½Ã°£
+    // â­ remaining = ì§€ê¸ˆ refillê¹Œì§€ ë‚¨ì€ ì‹œê°„
     let remaining = refillInterval - diffSec;
     if (remaining < 0) remaining = 0;
 
-    // ? ÇÙ½É 1 ? diffSecÀÌ ¸Å¿ì ÀÛÀ» ¶§ (0~1ÃÊ), remaining À¯Áö
-    // life°¡ °¨¼ÒÇß¾îµµ remaining À¯ÁöµÇ¹Ç·Î ÄğÅ¸ÀÓ ¸®¼ÂµÇ¸é ¾È µÊ
+    // â­ í•µì‹¬ 1 â€” diffSecì´ ë§¤ìš° ì‘ì„ ë•Œ (0~1ì´ˆ), remaining ìœ ì§€
+    // lifeê°€ ê°ì†Œí–ˆì–´ë„ remaining ìœ ì§€ë˜ë¯€ë¡œ ì¿¨íƒ€ì„ ë¦¬ì…‹ë˜ë©´ ì•ˆ ë¨
     if (diffSec === 0) {
         return { life, nextRefillIn: remaining };
     }
 
-    // ? °æ°ú ½Ã°£µ¿¾È Ã¤¿öÁø ÇÏÆ® °è»ê
+    // â­ ê²½ê³¼ ì‹œê°„ë™ì•ˆ ì±„ì›Œì§„ í•˜íŠ¸ ê³„ì‚°
     const refillCount = Math.floor(diffSec / refillInterval);
     const newLife = Math.min(maxLives, life + refillCount);
 
-    // ? ´ÙÀ½ refill±îÁö ³²Àº ½Ã°£
+    // â­ ë‹¤ìŒ refillê¹Œì§€ ë‚¨ì€ ì‹œê°„
     let nextRefillIn = refillInterval - (diffSec % refillInterval);
 
-    // ? ÇÏÆ®°¡ ²Ë Âù °æ¿ì
+    // â­ í•˜íŠ¸ê°€ ê½‰ ì°¬ ê²½ìš°
     if (newLife >= maxLives) {
         nextRefillIn = 0;
     }
@@ -67,7 +67,7 @@ function calculateLife(user) {
     return { life: newLife, nextRefillIn };
 }
 
-// ¼­¹ö »óÅÂ Å×½ºÆ®
+// ì„œë²„ ìƒíƒœ í…ŒìŠ¤íŠ¸
 app.get("/", (req, res) => {
     res.send("Node.js Firestore Server Running with Life System!");
 });
@@ -101,17 +101,17 @@ app.post("/save", async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
 
-        if (snap.exists) {
+        if (!snap.exists) {
+            // ì‹ ê·œ ìœ ì € â†’ lastLifeUpdate ì„¤ì •
+            updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
+        } else {
             const userData = snap.data();
+            const prevLife = Number(userData.life);
 
-            // ----- ³ë º¯°æ ÇÃ·¡±× ÇÙ½É -----
-            // life°¡ Áõ°¡ÇÑ °æ¿ì¸¸ lastLifeUpdate °»½Å
-            if (life > Number(userData.life)) {
+            // life ë³€í™”ê°€ ìˆìœ¼ë©´ íƒ€ì´ë¨¸ ì‹œì‘ ì§€ì  ê°±ì‹ 
+            if (life !== prevLife) {
                 updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
             }
-        } else {
-            // ½Å±Ô µ¥ÀÌÅÍ´Â lastLifeUpdate ³Ö¾îµµ OK
-            updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
         }
 
         await docRef.set(updateData, { merge: true });
@@ -123,7 +123,6 @@ app.post("/save", async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
 
 
 // ----------
@@ -141,7 +140,7 @@ app.post("/load", async (req, res) => {
         const snap = await docRef.get();
 
         // -------------------------
-        // ?? ½Å±Ô À¯Àú ·ÎÁ÷
+        // ?? ì‹ ê·œ ìœ ì € ë¡œì§
         // -------------------------
         if (!snap.exists) {
 
@@ -171,14 +170,14 @@ app.post("/load", async (req, res) => {
         }
 
         // -------------------------
-        // ?? ±âÁ¸ À¯Àú ·ÎÁ÷
+        // ?? ê¸°ì¡´ ìœ ì € ë¡œì§
         // -------------------------
         const data = snap.data();
 
-        // life ÀÚµ¿ °è»ê
+        // life ìë™ ê³„ì‚°
         const lifeResult = calculateLife(data);
 
-        // °è»êµÈ °á°ú ¾÷µ¥ÀÌÆ®
+        // ê³„ì‚°ëœ ê²°ê³¼ ì—…ë°ì´íŠ¸
         await docRef.update({
             life: lifeResult.life            
         });
@@ -204,7 +203,7 @@ function createDefaultSaveData(sku) {
         UserID: sku,
         Resources: {
             keys: ["Coins", "Life"],
-            values: [10, 5]   // ½ÃÀÛ ÄÚÀÎ=10, ¶óÀÌÇÁ=5
+            values: [10, 5]   // ì‹œì‘ ì½”ì¸=10, ë¼ì´í”„=5
         },
         LastDisabledTime: "",
         MaxLife: 5,

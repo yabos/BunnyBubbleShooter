@@ -56,7 +56,7 @@ function calculateLife(user) {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, json, life, maxLives, refillInterval } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
@@ -74,7 +74,8 @@ app.post("/save", async (req, res) => {
 
         // SAVE는 life, json만 저장 → 타이머 절대 영향 없음
         await docRef.set({
-            data: json,
+            clientAppVer: clientAppVer ?? "",   // 없으면 빈 문자열
+            data: json,            
             life,
             maxLives,
             refillInterval,

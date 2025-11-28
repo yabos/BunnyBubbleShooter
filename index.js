@@ -36,10 +36,14 @@ function calculateLife(user) {
     const last = lastLifeUpdate.toDate();
     const now = new Date();
 
-    const diffSec = Math.floor((now - last) / 1000);
+    let diffSec = Math.floor((now - last) / 1000);
+    if (diffSec < 0) diffSec = 0;
 
-    if (diffSec <= 0) {
-        return { life, nextRefillIn: refillInterval };
+    // ? 여기: life 감소 직후 diffSec이 매우 작으면, remaining time 유지
+    const remaining = refillInterval - diffSec;
+
+    if (diffSec === 0) {
+        return { life, nextRefillIn: remaining };
     }
 
     const refillCount = Math.floor(diffSec / refillInterval);
@@ -53,6 +57,7 @@ function calculateLife(user) {
 
     return { life: newLife, nextRefillIn };
 }
+
 
 // 서버 상태 테스트
 app.get("/", (req, res) => {

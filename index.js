@@ -14,9 +14,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ----------
-// 라이프 계산 함수
-// ----------
+
+// ------------------------------------------------------------
+// LIFE 계산 함수 (쿨타임 유지 + 자연충전 시만 life 증가)
+// ------------------------------------------------------------
 function calculateLife(user) {
     const {
         life = 5,
@@ -25,56 +26,40 @@ function calculateLife(user) {
         lastLifeUpdate
     } = user;
 
-    // 최대 라이프면 남은 시간 없음
+    // 최대 생명 → 타이머 없음
     if (life >= maxLives) {
-        return { life, nextRefillIn: 0 };
+        return { life, nextRefillIn: 0, refillCount: 0 };
     }
 
-    // lastLifeUpdate 없음 → 풀 쿨타임
+    // lastLifeUpdate 없으면 풀 쿨타임
     if (!lastLifeUpdate) {
-        return { life, nextRefillIn: refillInterval };
+        return { life, nextRefillIn: refillInterval, refillCount: 0 };
     }
 
     const last = lastLifeUpdate.toDate();
     const now = new Date();
-
-    // 지난 시간
     let diffSec = Math.floor((now - last) / 1000);
+
     if (diffSec < 0) diffSec = 0;
 
-    // ⭐ remaining = 지금 refill까지 남은 시간
-    let remaining = refillInterval - diffSec;
-    if (remaining < 0) remaining = 0;
-
-    // ⭐ 핵심 1 — diffSec이 매우 작을 때 (0~1초), remaining 유지
-    // life가 감소했어도 remaining 유지되므로 쿨타임 리셋되면 안 됨
-    if (diffSec === 0) {
-        return { life, nextRefillIn: remaining };
-    }
-
-    // ⭐ 경과 시간동안 채워진 하트 계산
+    // 자연 충전된 개수
     const refillCount = Math.floor(diffSec / refillInterval);
     const newLife = Math.min(maxLives, life + refillCount);
 
-    // ⭐ 다음 refill까지 남은 시간
+    // 다음 충전까지 남은 시간
     let nextRefillIn = refillInterval - (diffSec % refillInterval);
 
-    // ⭐ 하트가 꽉 찬 경우
     if (newLife >= maxLives) {
         nextRefillIn = 0;
     }
 
-    return { life: newLife, nextRefillIn };
+    return { life: newLife, nextRefillIn, refillCount };
 }
 
-// 서버 상태 테스트
-app.get("/", (req, res) => {
-    res.send("Node.js Firestore Server Running with Life System!");
-});
 
-// ----------
-// SAVE API
-// ----------
+// ------------------------------------------------------------
+// SAVE API (절대 lastLifeUpdate 갱신하지 않음)
+// ------------------------------------------------------------
 app.post("/save", async (req, res) => {
     let { sku, json, life, maxLives, refillInterval } = req.body;
 
@@ -91,30 +76,15 @@ app.post("/save", async (req, res) => {
 
     try {
         const docRef = firestore.collection("users").doc(sku);
-        const snap = await docRef.get();
 
-        let updateData = {
+        // Save에서는 life, json만 저장 (타이머 유지)
+        await docRef.set({
             data: json,
             life,
             maxLives,
             refillInterval,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-
-        if (!snap.exists) {
-            // 신규 유저 → lastLifeUpdate 설정
-            updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
-        } else {
-            const userData = snap.data();
-            const prevLife = Number(userData.life);
-
-            // life 변화가 있으면 타이머 시작 지점 갱신
-            if (life !== prevLife) {
-                updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
-            }
-        }
-
-        await docRef.set(updateData, { merge: true });
+        }, { merge: true });
 
         res.json({ success: true });
 
@@ -125,9 +95,9 @@ app.post("/save", async (req, res) => {
 });
 
 
-// ----------
-// LOAD API
-// ----------
+// ------------------------------------------------------------
+// LOAD API (자연 충전 발생 시에만 lastLifeUpdate 갱신)
+// ------------------------------------------------------------
 app.post("/load", async (req, res) => {
     const { sku } = req.body;
 
@@ -139,48 +109,50 @@ app.post("/load", async (req, res) => {
         const docRef = firestore.collection("users").doc(sku);
         const snap = await docRef.get();
 
-        // -------------------------
-        // ?? 신규 유저 로직
-        // -------------------------
+        // 신규 유저 생성 -----------------------------------------------------
         if (!snap.exists) {
 
             const defaultJson = createDefaultSaveData(sku);
-            const life = 5;
-            const maxLives = 5;
-            const refillInterval = 900;
+            const now = admin.firestore.FieldValue.serverTimestamp();
 
             await docRef.set({
                 data: defaultJson,
-                life,
-                maxLives,
-                refillInterval,
-                lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                life: 5,
+                maxLives: 5,
+                refillInterval: 900,
+                lastLifeUpdate: now,
+                updatedAt: now
             });
 
             return res.json({
                 exists: true,
                 isNewUser: true,
                 data: defaultJson,
-                life,
-                maxLives,
-                refillInterval,
+                life: 5,
+                maxLives: 5,
+                refillInterval: 900,
                 nextRefillIn: 0
             });
         }
 
-        // -------------------------
-        // ?? 기존 유저 로직
-        // -------------------------
+        // 기존 유저 로직 -----------------------------------------------------
         const data = snap.data();
-
-        // life 자동 계산
         const lifeResult = calculateLife(data);
 
-        // 계산된 결과 업데이트
-        await docRef.update({
-            life: lifeResult.life            
-        });
+        // refillCount > 0 → 자연충전 발생!
+        if (lifeResult.refillCount > 0) {
+            await docRef.update({
+                life: lifeResult.life,
+                lastLifeUpdate: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        else {
+            // 자연충전 없었으면 life만 업데이트
+            await docRef.update({
+                life: lifeResult.life
+            });
+        }
 
         return res.json({
             exists: true,
@@ -198,12 +170,16 @@ app.post("/load", async (req, res) => {
     }
 });
 
+
+// ------------------------------------------------------------
+// 신규 유저 기본 JSON
+// ------------------------------------------------------------
 function createDefaultSaveData(sku) {
     return JSON.stringify({
         UserID: sku,
         Resources: {
             keys: ["Coins", "Life"],
-            values: [10, 5]   // 시작 코인=10, 라이프=5
+            values: [10, 5]
         },
         LastDisabledTime: "",
         MaxLife: 5,
@@ -217,6 +193,7 @@ function createDefaultSaveData(sku) {
 }
 
 
+// ------------------------------------------------------------
 app.listen(3000, () => {
     console.log("Server running on port 3000");
 });

@@ -22,7 +22,7 @@ function calculateLife(user) {
     const {
         life = 5,
         maxLives = 5,
-        refillInterval = 900,
+        refillInterval = 30,
         lastLifeUpdate
     } = user;
 
@@ -67,7 +67,7 @@ app.post("/save", async (req, res) => {
     refillInterval = Number(refillInterval);
 
     if (!maxLives || maxLives <= 0) maxLives = 5;
-    if (!refillInterval || refillInterval <= 0) refillInterval = 900;
+    if (!refillInterval || refillInterval <= 0) refillInterval = 30;
 
     try {
         const docRef = firestore.collection("users").doc(sku);
@@ -115,7 +115,7 @@ app.post("/load", async (req, res) => {
                 data: defaultJson,
                 life: 5,
                 maxLives: 5,
-                refillInterval: 900,
+                refillInterval: 30,
                 lastLifeUpdate: now,
                 updatedAt: now
             });
@@ -126,7 +126,7 @@ app.post("/load", async (req, res) => {
                 data: defaultJson,
                 life: 5,
                 maxLives: 5,
-                refillInterval: 900,
+                refillInterval: 30,
                 nextRefillIn: 0
             });
         }

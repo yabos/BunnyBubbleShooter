@@ -180,7 +180,7 @@ function createDefaultSaveData(sku) {
         },
         LastDisabledTime: "",
         MaxLife: 5,
-        RefillInterval: 900,
+        RefillInterval: 30,
         NextRefillRemainTime: 0,
         Level: 1,
         OpenLevel: 1,

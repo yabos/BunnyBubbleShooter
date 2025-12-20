@@ -138,6 +138,7 @@ app.post("/load", async (req, res) => {
 
             const defaultJson = createDefaultSaveData(sku);
             const now = admin.firestore.FieldValue.serverTimestamp();
+            const nickname = await generateUniqueNickname(); // 닉네임 생성
 
             await docRef.set({
                 data: defaultJson,
@@ -145,7 +146,9 @@ app.post("/load", async (req, res) => {
                 maxLives: 5,
                 refillInterval: 900,
                 lastLifeUpdate: now,
-                updatedAt: now
+                updatedAt: now,
+                level: 1,
+                nickname: nickname // 저장
             });
 
             return res.json({
@@ -155,12 +158,21 @@ app.post("/load", async (req, res) => {
                 life: 5,
                 maxLives: 5,
                 refillInterval: 900,
-                nextRefillIn: 0
+                nextRefillIn: 0,
+                nickname: nickname // 반환
             });
         }
 
         // 기존 유저 ----------------------------------------------
         const data = snap.data();
+        
+        // 닉네임 없으면 생성 후 저장
+        let nickname = data.nickname;
+        if (!nickname) {
+            nickname = await generateUniqueNickname();
+            await docRef.update({ nickname: nickname });
+        }
+
         const lifeResult = calculateLife(data);
 
         let updatePayload = {
@@ -188,7 +200,8 @@ app.post("/load", async (req, res) => {
             life: lifeResult.life,
             nextRefillIn: lifeResult.nextRefillIn,
             maxLives: data.maxLives,
-            refillInterval: data.refillInterval
+            refillInterval: data.refillInterval,
+            nickname: nickname // 반환
         });
 
     } catch (err) {
@@ -229,6 +242,7 @@ app.post("/ranking", async (req, res) => {
                 rankingList.push({
                     rank: rankCounter++,
                     userId: doc.id,
+                    nickname: userData.nickname || "Unknown", // 닉네임
                     level: userData.level || 1,
                     // 필요한 경우 점수나 기타 정보 추가
                 });
@@ -258,6 +272,7 @@ app.post("/ranking", async (req, res) => {
                 myRankData = {
                     rank: -1, // 순위권 밖 표기
                     userId: sku,
+                    nickname: myData.nickname || "Unknown", // 닉네임
                     level: myData.level || 1,
                     isTargetVersion: isTossUser // 참고용 플래그
                 };

@@ -72,15 +72,43 @@ app.post("/save", async (req, res) => {
     try {
         const docRef = firestore.collection("users").doc(sku);
 
-        // SAVE는 life, json만 저장 → 타이머 절대 영향 없음
-        await docRef.set({
-            clientAppVer: clientAppVer ?? "",   // 없으면 빈 문자열
+        // 1. 현재 저장된 데이터 가져오기 (레벨 비교를 위해)
+        const docSnap = await docRef.get();
+        let currentLevel = 0;
+        
+        if (docSnap.exists) {
+            currentLevel = docSnap.data().level || 0;
+        }
+
+        // 2. 요청된 JSON에서 새 레벨 추출
+        let newLevel = 0;
+        try {
+            const parsedData = JSON.parse(json);
+            if (parsedData.Level) {
+                newLevel = Number(parsedData.Level);
+            }
+        } catch (e) {
+            console.error("JSON Parse Error for Level:", e);
+        }
+
+        // 3. 업데이트 페이로드 구성
+        let updateData = {
+            clientAppVer: clientAppVer ?? "", 
             data: json,            
             life,
             maxLives,
             refillInterval,
+            level: newLevel, // 최상위 필드에 레벨 저장
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
+
+        // ⭐ 레벨이 상승했을 때만 '달성 시간' 갱신 (먼저 깬 사람 우대)
+        // 신규 유저이거나, 레벨이 올랐을 때
+        if (!docSnap.exists || newLevel > currentLevel) {
+            updateData.levelUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+        } 
+        
+        await docRef.set(updateData, { merge: true });
 
         res.json({ success: true });
 
@@ -166,6 +194,84 @@ app.post("/load", async (req, res) => {
     } catch (err) {
         console.error("LOAD ERROR:", err);
         return res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ------------------------------------------------------------
+// RANKING API
+// ------------------------------------------------------------
+app.post("/ranking", async (req, res) => {
+    const { sku } = req.body; // 내 순위 확인용
+
+    try {
+        // 1. 랭킹 쿼리
+        // 정렬: 레벨(높은순) -> 달성시간(빠른순)
+        // 인덱스 필요: level(DESC) + levelUpdatedAt(ASC)
+        
+        const usersRef = firestore.collection("users");
+        
+        // "toss : T" 필터링을 위해 넉넉히 가져옴 (limit 100~200)
+        const snapshot = await usersRef
+            .orderBy("level", "desc")
+            .orderBy("levelUpdatedAt", "asc")
+            .limit(200) 
+            .get();
+
+        let rankingList = [];
+        let rankCounter = 1;
+
+        snapshot.forEach(doc => {
+            const userData = doc.data();
+            
+            // "toss : T" 버전 유저만 필터링
+            if (userData.clientAppVer && userData.clientAppVer.includes("toss : T")) {
+                rankingList.push({
+                    rank: rankCounter++,
+                    userId: doc.id,
+                    level: userData.level || 1,
+                    // 필요한 경우 점수나 기타 정보 추가
+                });
+            }
+        });
+
+        // 상위 50명 자르기
+        const top50 = rankingList.slice(0, 50);
+
+        // 2. 내 랭킹 정보 찾기
+        let myRankData = null;
+        
+        // 1) 탑 50 안에 내가 있는가?
+        const myEntry = top50.find(u => u.userId === sku);
+        
+        if (myEntry) {
+            myRankData = myEntry;
+        } else {
+            // 2) 없으면 내 정보 별도 조회
+            const myDoc = await usersRef.doc(sku).get();
+            if (myDoc.exists) {
+                const myData = myDoc.data();
+                
+                // 내가 "toss : T" 유저인지 확인
+                const isTossUser = myData.clientAppVer && myData.clientAppVer.includes("toss : T");
+                
+                myRankData = {
+                    rank: -1, // 순위권 밖 표기
+                    userId: sku,
+                    level: myData.level || 1,
+                    isTargetVersion: isTossUser // 참고용 플래그
+                };
+            }
+        }
+
+        res.json({
+            ranking: top50,
+            myRank: myRankData
+        });
+
+    } catch (err) {
+        console.error("RANKING ERROR:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 

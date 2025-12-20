@@ -51,6 +51,35 @@ function calculateLife(user) {
     return { life: newLife, nextRefillIn, refillCount };
 }
 
+// ------------------------------------------------------------
+// 닉네임 생성 및 중복 체크 헬퍼
+// ------------------------------------------------------------
+async function generateUniqueNickname() {
+    let nickname = "";
+    let exists = true;
+    let tryCount = 0;
+
+    while (exists && tryCount < 10) {
+        // 8자리 랜덤 숫자 생성
+        const randomNum = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
+        nickname = `Player${randomNum}`;
+
+        // 중복 체크
+        // 주의: nickname 필드에 인덱스가 없다면 쿼리가 느리거나 실패할 수 있음
+        const snap = await admin.firestore().collection("users").where("nickname", "==", nickname).limit(1).get();
+        if (snap.empty) {
+            exists = false;
+        }
+        tryCount++;
+    }
+    
+    // 10번 실패하면 시간 기반으로 생성 (중복 방지 최후의 수단)
+    if (exists) {
+        nickname = `Player${Date.now().toString().slice(-8)}`;
+    }
+
+    return nickname;
+}
 
 // ------------------------------------------------------------
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음

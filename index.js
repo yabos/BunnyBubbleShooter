@@ -129,7 +129,7 @@ app.post("/save", async (req, res) => {
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-			isPromotionRewardGranted: promoGranted
+            isPromotionRewardGranted: isPromotionRewardGranted
         };
 
         // ⭐ 레벨이 상승했을 때만 '달성 시간' 갱신 (먼저 깬 사람 우대)
@@ -210,6 +210,11 @@ app.post("/load", async (req, res) => {
         let updatePayload = {
             life: lifeResult.life
         };
+
+        // 기존 유저에게 필드가 없으면 DB에 초기값 생성
+        if (data.isPromotionRewardGranted === undefined) {
+            updatePayload.isPromotionRewardGranted = false;
+        }
 
         // ⭐ 자연 충전 (refillCount > 0) → 타이머 초기화
         if (lifeResult.refillCount > 0) {

@@ -104,14 +104,9 @@ app.post("/save", async (req, res) => {
         // 1. 현재 저장된 데이터 가져오기 (레벨 비교를 위해)
         const docSnap = await docRef.get();
         let currentLevel = 0;
-        let currentLife = 5;
-        let currentMaxLives = 5;
         
         if (docSnap.exists) {
-            const data = docSnap.data();
-            currentLevel = data.level || 0;
-            currentLife = (data.life !== undefined) ? data.life : 5;
-            currentMaxLives = (data.maxLives !== undefined) ? data.maxLives : 5;
+            currentLevel = docSnap.data().level || 0;
         }
 
         // 2. 요청된 JSON에서 새 레벨 추출
@@ -141,16 +136,6 @@ app.post("/save", async (req, res) => {
         // 신규 유저이거나, 레벨이 올랐을 때
         if (!docSnap.exists || newLevel > currentLevel) {
             updateData.levelUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
-        } 
-
-        // ⭐ 생명 타이머 보정 로직 (버그 수정)
-        // 기존에 생명이 꽉 차 있었는데, 이번 저장으로 생명이 줄어든 경우
-        // 타이머를 '현재 시간'으로 시작해야 함. 그렇지 않으면 과거의 lastLifeUpdate 때문에 즉시 충전됨.
-        const wasFull = !docSnap.exists || (currentLife >= currentMaxLives);
-        const isNowNotFull = life < maxLives;
-
-        if (wasFull && isNowNotFull) {
-            updateData.lastLifeUpdate = admin.firestore.FieldValue.serverTimestamp();
         } 
         
         await docRef.set(updateData, { merge: true });

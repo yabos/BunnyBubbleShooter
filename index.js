@@ -233,8 +233,8 @@ app.post("/load", async (req, res) => {
             nextRefillIn: lifeResult.nextRefillIn,
             maxLives: data.maxLives,
             refillInterval: data.refillInterval,
-            nickname: nickname // 반환
-			isPromotionRewardGranted: data.isPromotionRewardGranted || false
+            nickname: nickname, // 반환
+			isPromotionRewardGranted: data.isPromotionRewardGranted || false,			
         });
 
     } catch (err) {

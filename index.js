@@ -85,7 +85,7 @@ async function generateUniqueNickname() {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, clientAppVer, json, life, maxLives, refillInterval } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval, isPromotionRewardGranted } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
@@ -128,7 +128,8 @@ app.post("/save", async (req, res) => {
             maxLives,
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+			isPromotionRewardGranted: promoGranted
         };
 
         // ⭐ 레벨이 상승했을 때만 '달성 시간' 갱신 (먼저 깬 사람 우대)
@@ -177,7 +178,8 @@ app.post("/load", async (req, res) => {
                 lastLifeUpdate: now,
                 updatedAt: now,
                 level: 1,
-                nickname: nickname // 저장
+                nickname: nickname,
+                isPromotionRewardGranted: false
             });
 
             return res.json({
@@ -188,7 +190,8 @@ app.post("/load", async (req, res) => {
                 maxLives: 5,
                 refillInterval: 900,
                 nextRefillIn: 0,
-                nickname: nickname // 반환
+                nickname: nickname,
+				isPromotionRewardGranted: false
             });
         }
 
@@ -231,6 +234,7 @@ app.post("/load", async (req, res) => {
             maxLives: data.maxLives,
             refillInterval: data.refillInterval,
             nickname: nickname // 반환
+			isPromotionRewardGranted: data.isPromotionRewardGranted || false
         });
 
     } catch (err) {

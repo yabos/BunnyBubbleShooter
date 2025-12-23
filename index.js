@@ -129,7 +129,7 @@ app.post("/save", async (req, res) => {
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            isPromotionRewardGranted: isPromotionRewardGranted
+            isPromotionRewardGranted: (isPromotionRewardGranted !== undefined) ? isPromotionRewardGranted : false
         };
 
         // ⭐ 레벨이 상승했을 때만 '달성 시간' 갱신 (먼저 깬 사람 우대)

@@ -85,7 +85,7 @@ async function generateUniqueNickname() {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, clientAppVer, json, life, maxLives, refillInterval, isPromotionRewardGranted } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval, isPromotionRewardGranted, totalStars, nickname } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
@@ -94,6 +94,7 @@ app.post("/save", async (req, res) => {
     life = Number(life);
     maxLives = Number(maxLives);
     refillInterval = Number(refillInterval);
+    totalStars = Number(totalStars) || 0; // Receive totalStars
 
     if (!maxLives || maxLives <= 0) maxLives = 5;
     if (!refillInterval || refillInterval <= 0) refillInterval = 900;
@@ -128,9 +129,14 @@ app.post("/save", async (req, res) => {
             maxLives,
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
+            totalStars: totalStars, // Save totalStars
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             isPromotionRewardGranted: (isPromotionRewardGranted !== undefined) ? isPromotionRewardGranted : false
         };
+
+        if (nickname) {
+            updateData.nickname = nickname;
+        }
 
         // ⭐ 레벨이 상승했을 때만 '달성 시간' 갱신 (먼저 깬 사람 우대)
         // 신규 유저이거나, 레벨이 올랐을 때
@@ -178,6 +184,7 @@ app.post("/load", async (req, res) => {
                 lastLifeUpdate: now,
                 updatedAt: now,
                 level: 1,
+                totalStars: 0, // 초기값 설정
                 nickname: nickname, // 저장
                 isPromotionRewardGranted: false
             });
@@ -191,7 +198,8 @@ app.post("/load", async (req, res) => {
                 refillInterval: 900,
                 nextRefillIn: 0,
                 nickname: nickname, // 반환
-                isPromotionRewardGranted: false
+                isPromotionRewardGranted: false,
+                totalStars: 0
             });
         }
 
@@ -234,7 +242,8 @@ app.post("/load", async (req, res) => {
             maxLives: data.maxLives,
             refillInterval: data.refillInterval,
             nickname: nickname, // 반환
-            isPromotionRewardGranted: data.isPromotionRewardGranted || false
+            isPromotionRewardGranted: data.isPromotionRewardGranted || false,
+            totalStars: data.totalStars || 0
         });
 
     } catch (err) {
@@ -252,13 +261,14 @@ app.post("/ranking", async (req, res) => {
 
     try {
         // 1. 랭킹 쿼리
-        // 정렬: 레벨(높은순) -> 달성시간(빠른순)
-        // 인덱스 필요: level(DESC) + levelUpdatedAt(ASC)
+        // 정렬: 별 개수(높은순) -> 레벨(높은순) -> 달성시간(빠른순)
+        // 인덱스 필요: totalStars(DESC) + level(DESC) + levelUpdatedAt(ASC)
         
         const usersRef = firestore.collection("users");
         
         // "toss : T" 필터링을 위해 넉넉히 가져옴 (limit 100~200)
         const snapshot = await usersRef
+            .orderBy("totalStars", "desc")
             .orderBy("level", "desc")
             .orderBy("levelUpdatedAt", "asc")
             .limit(200) 
@@ -277,6 +287,7 @@ app.post("/ranking", async (req, res) => {
                     userId: doc.id,
                     nickname: userData.nickname || "Unknown", // 닉네임
                     level: userData.level || 1,
+                    totalStars: userData.totalStars || 0, // 별 개수 추가
                     // 필요한 경우 점수나 기타 정보 추가
                 });
             }
@@ -302,11 +313,49 @@ app.post("/ranking", async (req, res) => {
                 // 내가 "toss : T" 유저인지 확인
                 const isTossUser = myData.clientAppVer && myData.clientAppVer.includes("toss : T");
                 
+                // 내 랭킹 계산
+                let myRank = -1;
+
+                // 50위 밖이라도(혹은 Top50에 없는 버전이라도) 전체 유저 중 내 순위 계산
+                // "전체 토스 유저 중 순위"를 원하지만, 인덱스 문제로 clientAppVer 필터 없이 전체 유저 대상으로 계산
+                {
+                    const myTotalStars = myData.totalStars || 0;
+                    const myLevel = myData.level || 1;
+                    const myUpdatedAt = myData.levelUpdatedAt; 
+
+                    // 1. 별이 더 많은 사람
+                    const countQuery1 = usersRef.where("totalStars", ">", myTotalStars);
+                    const countSnapshot1 = await countQuery1.count().get();
+                    const betterStarsCount = countSnapshot1.data().count;
+
+                    // 2. 별이 같고 레벨이 더 높은 사람
+                    const countQuery2 = usersRef
+                        .where("totalStars", "==", myTotalStars)
+                        .where("level", ">", myLevel);
+                    const countSnapshot2 = await countQuery2.count().get();
+                    const betterLevelCount = countSnapshot2.data().count;
+
+                    // 3. 별과 레벨이 같고 달성 시간이 더 빠른 사람
+                    let betterTimeCount = 0;
+                    if (myUpdatedAt) {
+                        const countQuery3 = usersRef
+                            .where("totalStars", "==", myTotalStars)
+                            .where("level", "==", myLevel)
+                            .where("levelUpdatedAt", "<", myUpdatedAt);
+                        
+                        const countSnapshot3 = await countQuery3.count().get();
+                        betterTimeCount = countSnapshot3.data().count;
+                    }
+
+                    myRank = betterStarsCount + betterLevelCount + betterTimeCount + 1;
+                }
+
                 myRankData = {
-                    rank: -1, // 순위권 밖 표기
+                    rank: myRank,
                     userId: sku,
                     nickname: myData.nickname || "Unknown", // 닉네임
                     level: myData.level || 1,
+                    totalStars: myData.totalStars || 0,
                     isTargetVersion: isTossUser // 참고용 플래그
                 };
             }

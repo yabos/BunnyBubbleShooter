@@ -378,8 +378,8 @@ function createDefaultSaveData(sku) {
     return JSON.stringify({
         UserID: sku,
         Resources: {
-            keys: ["Coins", "Life"],
-            values: [10, 5]
+            keys: ["Coins", "Life", "Boost_MulticolorBallBoost", "Boost_AimBoost", "Boost_ExtraMoves", "Boost_ExtraTime"],
+            values: [10, 5, 2, 2, 2, 2]
         },
         LastDisabledTime: "",
         MaxLife: 5,

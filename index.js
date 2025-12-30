@@ -87,6 +87,10 @@ async function generateUniqueNickname() {
 app.post("/save", async (req, res) => {
     let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname, lastConnectionDate, connectionStreak } = req.body;
 
+    // undefined 방지
+    lastConnectionDate = lastConnectionDate || "";
+    connectionStreak = connectionStreak || 0;
+
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
     }

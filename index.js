@@ -85,7 +85,7 @@ async function generateUniqueNickname() {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname, lastConnectionDate, connectionStreak } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
@@ -130,6 +130,8 @@ app.post("/save", async (req, res) => {
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
             totalStars: totalStars, // Save totalStars
+            lastConnectionDate: lastConnectionDate,
+            connectionStreak: connectionStreak,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
 
@@ -192,7 +194,9 @@ app.post("/load", async (req, res) => {
                 level: 1,
                 totalStars: 0, // 초기값 설정
                 nickname: nickname, // 저장
-                promotionRewards: {} // 초기값 빈 객체
+                promotionRewards: {}, // 초기값 빈 객체
+                lastConnectionDate: "",
+                connectionStreak: 0
             });
 
             return res.json({
@@ -205,7 +209,9 @@ app.post("/load", async (req, res) => {
                 nextRefillIn: 0,
                 nickname: nickname, // 반환
                 promotionRewards: {},
-                totalStars: 0
+                totalStars: 0,
+                lastConnectionDate: "",
+                connectionStreak: 0
             });
         }
 
@@ -249,7 +255,9 @@ app.post("/load", async (req, res) => {
             refillInterval: data.refillInterval,
             nickname: nickname, // 반환
             promotionRewards: data.promotionRewards || {},
-            totalStars: data.totalStars || 0
+            totalStars: data.totalStars || 0,
+            lastConnectionDate: data.lastConnectionDate || "",
+            connectionStreak: data.connectionStreak || 0
         });
 
     } catch (err) {

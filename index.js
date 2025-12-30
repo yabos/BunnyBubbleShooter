@@ -85,7 +85,7 @@ async function generateUniqueNickname() {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, clientAppVer, json, life, maxLives, refillInterval, isPromotionRewardGranted, totalStars, nickname } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname } = req.body;
 
     if (!sku || json === undefined || life === undefined) {
         return res.status(400).json({ error: "Missing sku, json or life" });
@@ -130,9 +130,15 @@ app.post("/save", async (req, res) => {
             refillInterval,
             level: newLevel, // 최상위 필드에 레벨 저장
             totalStars: totalStars, // Save totalStars
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            isPromotionRewardGranted: (isPromotionRewardGranted !== undefined) ? isPromotionRewardGranted : false
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
+
+        // promotionRewards 처리 (Map<String, Boolean>)
+        // 클라이언트에서 promotionRewards 필드를 JSON으로 보내거나 별도 필드로 보낸다고 가정
+        // 여기서는 req.body에 promotionRewards 객체가 있다고 가정
+        if (req.body.promotionRewards) {
+            updateData.promotionRewards = req.body.promotionRewards;
+        }
 
         if (nickname) {
             updateData.nickname = nickname;
@@ -186,7 +192,7 @@ app.post("/load", async (req, res) => {
                 level: 1,
                 totalStars: 0, // 초기값 설정
                 nickname: nickname, // 저장
-                isPromotionRewardGranted: false
+                promotionRewards: {} // 초기값 빈 객체
             });
 
             return res.json({
@@ -198,7 +204,7 @@ app.post("/load", async (req, res) => {
                 refillInterval: 900,
                 nextRefillIn: 0,
                 nickname: nickname, // 반환
-                isPromotionRewardGranted: false,
+                promotionRewards: {},
                 totalStars: 0
             });
         }
@@ -242,7 +248,7 @@ app.post("/load", async (req, res) => {
             maxLives: data.maxLives,
             refillInterval: data.refillInterval,
             nickname: nickname, // 반환
-            isPromotionRewardGranted: data.isPromotionRewardGranted || false,
+            promotionRewards: data.promotionRewards || {},
             totalStars: data.totalStars || 0
         });
 

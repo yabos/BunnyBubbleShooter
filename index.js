@@ -85,7 +85,7 @@ async function generateUniqueNickname() {
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
-    let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname, lastConnectionDate, connectionStreak } = req.body;
+    let { sku, clientAppVer, json, life, maxLives, refillInterval, totalStars, nickname, lastConnectionDate, connectionStreak, promotionEntries } = req.body;
 
     // undefined 방지
     lastConnectionDate = lastConnectionDate || "";
@@ -146,6 +146,10 @@ app.post("/save", async (req, res) => {
             updateData.promotionRewards = req.body.promotionRewards;
         }
 
+        if (promotionEntries) {
+            updateData.promotionEntries = promotionEntries;
+        }
+
         if (nickname) {
             updateData.nickname = nickname;
         }
@@ -199,6 +203,7 @@ app.post("/load", async (req, res) => {
                 totalStars: 0, // 초기값 설정
                 nickname: nickname, // 저장
                 promotionRewards: {}, // 초기값 빈 객체
+                promotionEntries: {}, // 초기값 빈 객체
                 lastConnectionDate: "",
                 connectionStreak: 0
             });
@@ -213,6 +218,7 @@ app.post("/load", async (req, res) => {
                 nextRefillIn: 0,
                 nickname: nickname, // 반환
                 promotionRewards: {},
+                promotionEntries: {},
                 totalStars: 0,
                 lastConnectionDate: "",
                 connectionStreak: 0
@@ -259,6 +265,7 @@ app.post("/load", async (req, res) => {
             refillInterval: data.refillInterval,
             nickname: nickname, // 반환
             promotionRewards: data.promotionRewards || {},
+            promotionEntries: data.promotionEntries || {},
             totalStars: data.totalStars || 0,
             lastConnectionDate: data.lastConnectionDate || "",
             connectionStreak: data.connectionStreak || 0

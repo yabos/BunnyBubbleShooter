@@ -82,6 +82,25 @@ async function generateUniqueNickname() {
 }
 
 // ------------------------------------------------------------
+// NICKNAME CHECK API
+// ------------------------------------------------------------
+app.post("/check-nickname", async (req, res) => {
+    const { nickname } = req.body;
+
+    if (!nickname) {
+        return res.status(400).json({ error: "Nickname is required" });
+    }
+
+    try {
+        const snap = await firestore.collection("users").where("nickname", "==", nickname).limit(1).get();
+        return res.json({ available: snap.empty });
+    } catch (err) {
+        console.error("NICKNAME CHECK ERROR:", err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------------------------------------------------
 // SAVE API – life 변화 저장 / 타이머는 건드리지 않음
 // ------------------------------------------------------------
 app.post("/save", async (req, res) => {
